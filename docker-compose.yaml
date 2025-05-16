@@ -25,16 +25,50 @@ services:
     restart: on-failure
     networks:
       - flink-net
-
   dynamodb-local:
     image: amazon/dynamodb-local:latest
     container_name: dynamodb-local
-    command: "-jar DynamoDBLocal.jar -sharedDb -dbPath ./data"
-    working_dir: /home/dynamodblocal
-    volumes:
-      - dynamodb-data:/home/dynamodblocal/data
+    # no volumes or tmpfs—run entirely in memory
     ports:
       - "8000:8000"
+    entrypoint:
+      - sh
+      - -c
+      - |
+        echo "🗄️ Starting DynamoDB Local in inMemory mode"
+        java -jar DynamoDBLocal.jar -sharedDb -inMemory -port 8000
+    networks:
+      - flink-net
+
+
+  init-dynamodb:
+    image: amazon/aws-cli:2.11.0
+    container_name: init-dynamodb
+    depends_on:
+      - dynamodb-local
+    environment:
+      AWS_ACCESS_KEY_ID:     fakeMyKeyId
+      AWS_SECRET_ACCESS_KEY: fakeSecretAccessKey
+      AWS_REGION:            fakeRegion
+    entrypoint:
+      - sh
+      - -c
+      - |
+        echo '⏳ Waiting for DynamoDB Local…'
+        until aws dynamodb list-tables --endpoint-url http://dynamodb-local:8000; do
+          sleep 1
+        done
+
+        echo '🚀 Creating WordCount table (if not exists)…'
+        aws dynamodb create-table \
+          --table-name WordCount \
+          --attribute-definitions AttributeName=word,AttributeType=S \
+          --key-schema AttributeName=word,KeyType=HASH \
+          --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5 \
+          --endpoint-url http://dynamodb-local:8000 \
+        || echo 'Table already exists.'
+
+        echo '✅ Table initialized.'
     networks:
       - flink-net
 
@@ -44,16 +78,17 @@ services:
     depends_on:
       - builder
       - dynamodb-local
+      - init-dynamodb
     ports:
       - "8081:8081"
     volumes:
       - ./job:/job
     environment:
-      - JOB_MANAGER_RPC_ADDRESS=jobmanager
-      - AWS_ACCESS_KEY_ID=fakeMyKeyId
-      - AWS_SECRET_ACCESS_KEY=fakeSecretAccessKey
-      - AWS_REGION=fakeRegion
-      - DYNAMODB_ENDPOINT=http://dynamodb-local:8000
+      JOB_MANAGER_RPC_ADDRESS: jobmanager
+      AWS_ACCESS_KEY_ID: fakeMyKeyId
+      AWS_SECRET_ACCESS_KEY: fakeSecretAccessKey
+      AWS_REGION: fakeRegion
+      DYNAMODB_ENDPOINT: http://dynamodb-local:8000
     command: >
       bash -c "
         echo '⏳ Waiting for builder marker…' &&
@@ -73,11 +108,11 @@ services:
     depends_on:
       - jobmanager
     environment:
-      - JOB_MANAGER_RPC_ADDRESS=jobmanager
-      - AWS_ACCESS_KEY_ID=fakeMyKeyId
-      - AWS_SECRET_ACCESS_KEY=fakeSecretAccessKey
-      - AWS_REGION=fakeRegion
-      - DYNAMODB_ENDPOINT=http://dynamodb-local:8000
+      JOB_MANAGER_RPC_ADDRESS: jobmanager
+      AWS_ACCESS_KEY_ID: fakeMyKeyId
+      AWS_SECRET_ACCESS_KEY: fakeSecretAccessKey
+      AWS_REGION: fakeRegion
+      DYNAMODB_ENDPOINT: http://dynamodb-local:8000
     command: taskmanager
     networks:
       - flink-net

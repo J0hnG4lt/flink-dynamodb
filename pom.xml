@@ -26,6 +26,18 @@
       <artifactId>flink-clients</artifactId>
       <version>${flink.version}</version>
     </dependency>
+
+<dependency>
+  <groupId>software.amazon.awssdk</groupId>
+  <artifactId>dynamodb</artifactId>
+  <version>2.20.0</version>
+</dependency>
+<dependency>
+  <groupId>software.amazon.awssdk</groupId>
+  <artifactId>sdk-core</artifactId>
+  <version>2.20.0</version>
+</dependency>
+
   </dependencies>
 
   <build>
