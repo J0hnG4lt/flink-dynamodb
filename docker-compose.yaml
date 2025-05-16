@@ -9,18 +9,12 @@ services:
       - ./:/workspace
     command: >
       bash -c "
-        # remove any old jar & marker
         rm -f job/my-job.jar job/.built.ok &&
-
-        # build the fat jar
         mvn clean package &&
-
-        # stage the jar & marker
         mkdir -p job &&
         cp target/flink-wordcount-1.0-jar-with-dependencies.jar job/my-job.jar &&
         touch job/.built.ok &&
-
-        echo '✅ Built my-job.jar and marker' &&
+        echo '✅ Built my-job.jar' &&
         tail -f /dev/null
       "
     healthcheck:
@@ -32,28 +26,42 @@ services:
     networks:
       - flink-net
 
+  dynamodb-local:
+    image: amazon/dynamodb-local:latest
+    container_name: dynamodb-local
+    command: "-jar DynamoDBLocal.jar -sharedDb -dbPath ./data"
+    working_dir: /home/dynamodblocal
+    volumes:
+      - dynamodb-data:/home/dynamodblocal/data
+    ports:
+      - "8000:8000"
+    networks:
+      - flink-net
+
   jobmanager:
     image: flink:1.20.1-scala_2.12-java11
     container_name: flink-jobmanager
     depends_on:
       - builder
+      - dynamodb-local
     ports:
       - "8081:8081"
     volumes:
       - ./job:/job
     environment:
       - JOB_MANAGER_RPC_ADDRESS=jobmanager
+      - AWS_ACCESS_KEY_ID=fakeMyKeyId
+      - AWS_SECRET_ACCESS_KEY=fakeSecretAccessKey
+      - AWS_REGION=fakeRegion
+      - DYNAMODB_ENDPOINT=http://dynamodb-local:8000
     command: >
       bash -c "
         echo '⏳ Waiting for builder marker…' &&
         until [ -f /job/.built.ok ]; do sleep 1; done &&
-
-        echo '🚀 Marker found, starting Flink cluster…' &&
+        echo '🚀 Starting Flink cluster…' &&
         start-cluster.sh &&
-
         echo '▶ Submitting job…' &&
         flink run /job/my-job.jar &&
-
         tail -f /dev/null
       "
     networks:
@@ -66,9 +74,16 @@ services:
       - jobmanager
     environment:
       - JOB_MANAGER_RPC_ADDRESS=jobmanager
+      - AWS_ACCESS_KEY_ID=fakeMyKeyId
+      - AWS_SECRET_ACCESS_KEY=fakeSecretAccessKey
+      - AWS_REGION=fakeRegion
+      - DYNAMODB_ENDPOINT=http://dynamodb-local:8000
     command: taskmanager
     networks:
       - flink-net
+
+volumes:
+  dynamodb-data:
 
 networks:
   flink-net:
