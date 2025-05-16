@@ -1,0 +1,75 @@
+version: "2.4"
+
+services:
+  builder:
+    image: maven:3.6.3-adoptopenjdk-15
+    container_name: flink-builder
+    working_dir: /workspace
+    volumes:
+      - ./:/workspace
+    command: >
+      bash -c "
+        # remove any old jar & marker
+        rm -f job/my-job.jar job/.built.ok &&
+
+        # build the fat jar
+        mvn clean package &&
+
+        # stage the jar & marker
+        mkdir -p job &&
+        cp target/flink-wordcount-1.0-jar-with-dependencies.jar job/my-job.jar &&
+        touch job/.built.ok &&
+
+        echo '✅ Built my-job.jar and marker' &&
+        tail -f /dev/null
+      "
+    healthcheck:
+      test: ["CMD", "bash", "-c", "test -f /workspace/job/.built.ok"]
+      interval: 5s
+      timeout: 2s
+      retries: 20
+    restart: on-failure
+    networks:
+      - flink-net
+
+  jobmanager:
+    image: flink:1.20.1-scala_2.12-java11
+    container_name: flink-jobmanager
+    depends_on:
+      - builder
+    ports:
+      - "8081:8081"
+    volumes:
+      - ./job:/job
+    environment:
+      - JOB_MANAGER_RPC_ADDRESS=jobmanager
+    command: >
+      bash -c "
+        echo '⏳ Waiting for builder marker…' &&
+        until [ -f /job/.built.ok ]; do sleep 1; done &&
+
+        echo '🚀 Marker found, starting Flink cluster…' &&
+        start-cluster.sh &&
+
+        echo '▶ Submitting job…' &&
+        flink run /job/my-job.jar &&
+
+        tail -f /dev/null
+      "
+    networks:
+      - flink-net
+
+  taskmanager:
+    image: flink:1.20.1-scala_2.12-java11
+    container_name: flink-taskmanager
+    depends_on:
+      - jobmanager
+    environment:
+      - JOB_MANAGER_RPC_ADDRESS=jobmanager
+    command: taskmanager
+    networks:
+      - flink-net
+
+networks:
+  flink-net:
+    driver: bridge

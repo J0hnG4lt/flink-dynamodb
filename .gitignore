@@ -1,0 +1,30 @@
+# Maven build output
+/target/
+/pom.xml.tag
+/pom.xml.releaseBackup
+/pom.xml.versionsBackup
+/logging.log
+
+# Job artifacts
+/job/*.jar
+/job/.built.ok
+
+# IDE files
+.idea/
+/.vscode/
+*.iml
+
+# Eclipse metadata
+.classpath
+.project
+.settings/
+
+# macOS / Windows
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary files
+*~
