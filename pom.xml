@@ -6,7 +6,7 @@
   <modelVersion>4.0.0</modelVersion>
 
   <groupId>org.example</groupId>
-  <artifactId>flink-wordcount</artifactId>
+  <artifactId>flink-job</artifactId>
   <version>1.0</version>
   <packaging>jar</packaging>
 
@@ -38,6 +38,20 @@
   <version>2.20.0</version>
 </dependency>
 
+  <!-- Kinesis connector -->
+  <dependency>
+    <groupId>org.apache.flink</groupId>
+    <artifactId>flink-connector-kinesis</artifactId>
+    <version>5.0.0-1.20</version>
+  </dependency>
+
+  <!-- Jackson for JSON parsing -->
+  <dependency>
+    <groupId>com.fasterxml.jackson.core</groupId>
+    <artifactId>jackson-databind</artifactId>
+    <version>2.14.2</version>
+  </dependency>
+
   </dependencies>
 
   <build>
@@ -61,7 +75,7 @@
         <configuration>
           <archive>
             <manifest>
-              <mainClass>org.example.WordCountJob</mainClass>
+              <mainClass>org.example.KinesisToDynamoDBJob</mainClass>
             </manifest>
           </archive>
           <descriptorRefs>

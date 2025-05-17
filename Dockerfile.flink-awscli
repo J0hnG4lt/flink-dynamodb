@@ -1,0 +1,12 @@
+# Dockerfile.flink-awscli
+FROM flink:1.20.1-scala_2.12-java11
+
+USER root
+# install pip & awscli
+RUN apt-get update && \
+    apt-get install -y python3-pip && \
+    pip3 install awscli && \
+    rm -rf /var/lib/apt/lists/*
+
+# drop back to Flink's default non-root user
+USER flink

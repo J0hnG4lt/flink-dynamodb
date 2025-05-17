@@ -1,4 +1,4 @@
-version: "2.4"
+version: "3.8"
 
 services:
   builder:
@@ -12,7 +12,7 @@ services:
         rm -f job/my-job.jar job/.built.ok &&
         mvn clean package &&
         mkdir -p job &&
-        cp target/flink-wordcount-1.0-jar-with-dependencies.jar job/my-job.jar &&
+        cp target/flink-job-1.0-jar-with-dependencies.jar job/my-job.jar &&
         touch job/.built.ok &&
         echo '✅ Built my-job.jar' &&
         tail -f /dev/null
@@ -59,11 +59,15 @@ services:
           sleep 1
         done
 
-        echo '🚀 Creating WordCount table (if not exists)…'
+        echo '🚀 Creating DeduplicatedEvents table (if not exists)…'
         aws dynamodb create-table \
-          --table-name WordCount \
-          --attribute-definitions AttributeName=word,AttributeType=S \
-          --key-schema AttributeName=word,KeyType=HASH \
+          --table-name DeduplicatedEvents \
+          --attribute-definitions \
+            AttributeName=id,AttributeType=S \
+            AttributeName=event_timestamp,AttributeType=N \
+          --key-schema \
+            AttributeName=id,KeyType=HASH \
+            AttributeName=event_timestamp,KeyType=RANGE \
           --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5 \
           --endpoint-url http://dynamodb-local:8000 \
         || echo 'Table already exists.'
@@ -73,17 +77,19 @@ services:
       - flink-net
 
   localstack:
-    image: localstack/localstack:2.1
+    image: localstack/localstack:latest
     container_name: localstack
     ports:
       - "4566:4566"       # edge port for all services
       - "4576:4576"       # legacy Kinesis
     environment:
-      - SERVICES=kinesis,dynamodb
+      - SERVICES=kinesis
       - DEBUG=1
       - AWS_DEFAULT_REGION=us-east-1
       - AWS_ACCESS_KEY_ID=fakeMyKeyId
       - AWS_SECRET_ACCESS_KEY=fakeSecretAccessKey
+      - AWS_CBOR_DISABLE="true"
+      - KINESIS_MOCK_MODE=legacy
     networks:
       - flink-net
 
@@ -98,6 +104,7 @@ services:
       AWS_SECRET_ACCESS_KEY: fakeSecretAccessKey
       AWS_REGION:            us-east-1
       AWS_PAGER:             ""             # disable any paging
+      AWS_CBOR_DISABLE: "true"
     entrypoint:
       - sh
       - -c
@@ -124,12 +131,16 @@ services:
 
 
   jobmanager:
-    image: flink:1.20.1-scala_2.12-java11
+    build:
+      context: .
+      dockerfile: Dockerfile.flink-awscli
     container_name: flink-jobmanager
     depends_on:
       - builder
       - dynamodb-local
       - init-dynamodb
+      - localstack
+      - init-kinesis
     ports:
       - "8081:8081"
     volumes:
@@ -140,14 +151,25 @@ services:
       AWS_SECRET_ACCESS_KEY: fakeSecretAccessKey
       AWS_REGION: us-east-1
       DYNAMODB_ENDPOINT: http://dynamodb-local:8000
+      KINESIS_ENDPOINT: http://localstack:4566
+      JAVA_TOOL_OPTIONS: "-Dcom.amazonaws.sdk.disableCbor=true"
+      AWS_CBOR_DISABLE: "true"
+      CBOR_ENABLED: "false"
     command: >
       bash -c "
-        echo '⏳ Waiting for builder marker…' &&
+        echo '⏳ Waiting for MyStream…' &&
+        until aws kinesis list-streams --endpoint-url http://localstack:4566 --region us-east-1 | grep -q MyStream; do sleep 1; done &&
+        echo '✔ MyStream exists' &&
+
+        echo '⏳ Waiting for build…' &&
         until [ -f /job/.built.ok ]; do sleep 1; done &&
-        echo '🚀 Starting Flink cluster…' &&
+
+        echo '🚀 Starting Flink…' &&
         start-cluster.sh &&
+
         echo '▶ Submitting job…' &&
         flink run /job/my-job.jar &&
+
         tail -f /dev/null
       "
     networks:
@@ -164,6 +186,9 @@ services:
       AWS_SECRET_ACCESS_KEY: fakeSecretAccessKey
       AWS_REGION: us-east-1
       DYNAMODB_ENDPOINT: http://dynamodb-local:8000
+      KINESIS_ENDPOINT: http://localstack:4566
+      JAVA_TOOL_OPTIONS: "-Dcom.amazonaws.sdk.disableCbor=true"
+      CBOR_ENABLED: "false"
     command: taskmanager
     networks:
       - flink-net
