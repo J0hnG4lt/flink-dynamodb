@@ -154,6 +154,8 @@ aws dynamodb scan \
 
 You can also use the [NoSQL Workbench](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/workbench.settingup.html).
 
+![NoSQL Workbench from AWS](./docs/nosql-workbench.png)
+
 ## 8. Flink Job Pipeline
 
 ```mermaid

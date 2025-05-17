@@ -3,6 +3,7 @@ package org.example;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import org.apache.flink.api.common.state.StateTtlConfig;
 import org.apache.flink.api.common.state.ValueState;
 import org.apache.flink.api.common.state.ValueStateDescriptor;
 import org.apache.flink.api.common.functions.RichFlatMapFunction;
@@ -15,7 +16,6 @@ import org.apache.flink.streaming.api.functions.KeyedProcessFunction;
 import org.apache.flink.streaming.connectors.kinesis.FlinkKinesisConsumer;
 import org.apache.flink.streaming.connectors.kinesis.config.AWSConfigConstants;
 import org.apache.flink.streaming.connectors.kinesis.config.ConsumerConfigConstants;
-import org.apache.flink.streaming.api.functions.sink.SinkFunction.Context;
 import org.apache.flink.util.Collector;
 
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
@@ -25,6 +25,7 @@ import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
 
+import java.time.Duration;
 import java.net.URI;
 import java.util.HashMap;
 import java.util.Map;
@@ -117,21 +118,42 @@ public class KinesisToDynamoDBJob {
     }
 
     // dedup by id & timestamp
-    public static class DeduplicationFunction extends KeyedProcessFunction<String, Event, Event> {
+    public static class DeduplicationFunction
+        extends KeyedProcessFunction<String, Event, Event> {
+
         private transient ValueState<Long> lastSeen;
+
         @Override
         public void open(Configuration parameters) {
-            lastSeen = getRuntimeContext().getState(
-                new ValueStateDescriptor<>("lastSeen", Long.class)
-            );
+            // create descriptor
+            ValueStateDescriptor<Long> desc =
+                new ValueStateDescriptor<>("lastSeen", Long.class);
+
+            // configure 1h TTL, resetting on write, never return expired
+            StateTtlConfig ttl = StateTtlConfig
+                .newBuilder(Duration.ofHours(1))
+                .setUpdateType(StateTtlConfig.UpdateType.OnCreateAndWrite)
+                .setStateVisibility(StateTtlConfig.StateVisibility.NeverReturnExpired)
+                .build();
+
+            desc.enableTimeToLive(ttl);
+
+            lastSeen = getRuntimeContext().getState(desc);
         }
+
         @Override
-        public void processElement(Event value, Context ctx, Collector<Event> out) throws Exception {
+        public void processElement(
+                Event value,
+                Context ctx,
+                Collector<Event> out) throws Exception {
+
             Long prev = lastSeen.value();
             if (prev == null || value.eventTs > prev) {
+                // this write also refreshes TTL
                 lastSeen.update(value.eventTs);
                 out.collect(value);
             }
+            // if prev ≥ value.eventTs, drop duplicate/old
         }
     }
 
