@@ -26,10 +26,10 @@ A complete sample project demonstrating how to run an Apache Flink job that:
 ```mermaid
 flowchart LR
   subgraph Local Dev Environment
-    A[send_to_kinesis.py (boto3)] -->|put_record| B[Kinesis Stream (LocalStack)]
-    B -->|FlinkKinesisConsumer| C[Flink Job (JobManager & TaskManager)]
-    C -->|DynamoDbClient.putItem| D[DynamoDB Table (Local)]
-    E[init-dynamodb (AWS CLI)] --> D
+    A["send_to_kinesis.py (boto3)"] -->|put_record| B["Kinesis Stream (LocalStack)"]
+    B -->|FlinkKinesisConsumer| C["Flink Job (JobManager & TaskManager)"]
+    C -->|"DynamoDbClient.putItem"| D["DynamoDB Table (Local)"]
+    E["init-dynamodb (AWS CLI)"] --> D
   end
 ```
 
@@ -67,37 +67,8 @@ flowchart LR
 
 ---
 
-## 4. .gitignore
 
-```
-# Maven build output
-/target/
-/pom.xml.tag
-/pom.xml.releaseBackup
-/pom.xml.versionsBackup
-/logging.log
-
-# Job artifacts
-/job/*.jar
-/job/.built.ok
-
-# IDE files
-.idea/
-/.vscode/
-*.iml
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# Logs & temp
-*.log
-*~
-```
-
----
-
-## 5. Building the Flink Job
+## 4. Building the Flink Job
 
 Locally, or via the `builder` service:
 
@@ -109,10 +80,10 @@ touch job/.built.ok
 
 ---
 
-## 6. Running with Docker Compose
+## 5. Running with Docker Compose
 
 ```bash
-docker-compose up --build
+podman compose up --build
 ```
 
 This will:
@@ -127,7 +98,7 @@ This will:
 
 ---
 
-## 7. Sending Test Data
+## 6. Sending Test Data
 
 Save and run `send_to_kinesis.py`:
 
@@ -166,7 +137,7 @@ python send_to_kinesis.py
 
 ---
 
-## 8. Inspecting DynamoDB Local
+## 7. Inspecting DynamoDB Local
 
 ```bash
 aws dynamodb list-tables \
@@ -181,15 +152,17 @@ aws dynamodb scan \
 
 ---
 
-## 9. Flink Job Pipeline
+You can also use the [NoSQL Workbench](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/workbench.settingup.html).
+
+## 8. Flink Job Pipeline
 
 ```mermaid
 flowchart TD
   A[Raw JSON from Kinesis]
-  A --> B[JsonParser (FlatMap)]
-  B --> C[KeyBy(id)]
-  C --> D[DeduplicationFunction (KeyedProcessFunction)]
-  D --> E[DynamoDBUpsertSink (RichSinkFunction)]
+  A --> B["JsonParser (FlatMap)"]
+  B --> C["KeyBy(id)"]
+  C --> D["DeduplicationFunction (KeyedProcessFunction)"]
+  D --> E["DynamoDBUpsertSink (RichSinkFunction)"]
 ```
 
 1. **JsonParser** – parses each JSON string into an `Event(id, ts, payload)`
@@ -199,7 +172,7 @@ flowchart TD
 
 ---
 
-## 10. Configuration Details
+## 9. Configuration Details
 
 * **Disable CBOR** (avoid LocalStack timestamp parsing issues)
 
