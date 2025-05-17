@@ -49,7 +49,7 @@ services:
     environment:
       AWS_ACCESS_KEY_ID:     fakeMyKeyId
       AWS_SECRET_ACCESS_KEY: fakeSecretAccessKey
-      AWS_REGION:            fakeRegion
+      AWS_REGION:            us-east-1
     entrypoint:
       - sh
       - -c
@@ -72,6 +72,57 @@ services:
     networks:
       - flink-net
 
+  localstack:
+    image: localstack/localstack:2.1
+    container_name: localstack
+    ports:
+      - "4566:4566"       # edge port for all services
+      - "4576:4576"       # legacy Kinesis
+    environment:
+      - SERVICES=kinesis,dynamodb
+      - DEBUG=1
+      - AWS_DEFAULT_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=fakeMyKeyId
+      - AWS_SECRET_ACCESS_KEY=fakeSecretAccessKey
+    networks:
+      - flink-net
+
+
+  init-kinesis:
+    image: amazon/aws-cli:2.11.0
+    container_name: flink-dynamodb-init-kinesis
+    depends_on:
+      - localstack
+    environment:
+      AWS_ACCESS_KEY_ID:     fakeMyKeyId
+      AWS_SECRET_ACCESS_KEY: fakeSecretAccessKey
+      AWS_REGION:            us-east-1
+      AWS_PAGER:             ""             # disable any paging
+    entrypoint:
+      - sh
+      - -c
+      - |
+        echo '⏳ Waiting for LocalStack Kinesis API…'
+        until aws kinesis list-streams \
+                --endpoint-url http://localstack:4566 2>&1 \
+                | grep -q '"StreamNames"'; do
+          echo "  still waiting…"
+          sleep 2
+        done
+
+        echo '🚀 Creating MyStream (if not exists)…'
+        aws kinesis create-stream \
+          --stream-name MyStream \
+          --shard-count 1 \
+          --endpoint-url http://localstack:4566 \
+        && echo '  MyStream created.' \
+        || echo '  MyStream already exists.'
+
+        echo '✅ Kinesis initialized.'
+    networks:
+      - flink-net
+
+
   jobmanager:
     image: flink:1.20.1-scala_2.12-java11
     container_name: flink-jobmanager
@@ -87,7 +138,7 @@ services:
       JOB_MANAGER_RPC_ADDRESS: jobmanager
       AWS_ACCESS_KEY_ID: fakeMyKeyId
       AWS_SECRET_ACCESS_KEY: fakeSecretAccessKey
-      AWS_REGION: fakeRegion
+      AWS_REGION: us-east-1
       DYNAMODB_ENDPOINT: http://dynamodb-local:8000
     command: >
       bash -c "
@@ -111,7 +162,7 @@ services:
       JOB_MANAGER_RPC_ADDRESS: jobmanager
       AWS_ACCESS_KEY_ID: fakeMyKeyId
       AWS_SECRET_ACCESS_KEY: fakeSecretAccessKey
-      AWS_REGION: fakeRegion
+      AWS_REGION: us-east-1
       DYNAMODB_ENDPOINT: http://dynamodb-local:8000
     command: taskmanager
     networks:
